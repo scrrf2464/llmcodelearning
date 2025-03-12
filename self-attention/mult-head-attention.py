@@ -2,7 +2,8 @@ import math
 import torch
 import torch.nn as nn
 from torchsummary import summary
-class MultiHeadSelfattention(nn.Module):
+import torch.nn.functional as F
+class MultiHeadSelfattentionV1(nn.Module):
     def __init__(self, hidden_dim, head_num, attention_dropout=0.1):
         super().__init__()
         self.hidden_dim = hidden_dim
@@ -46,6 +47,49 @@ class MultiHeadSelfattention(nn.Module):
 
         return output
 
+
+class MultiHeadSelfattentionV2(nn.Module):
+    def __init__(self, hidden_dim, head_num, attention_dropout=0.1,attention_mask=None):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.head_num = head_num
+        self.head_dim = hidden_dim // head_num
+
+        self.heads = nn.ModuleList([
+            SingalHeadAttention(self.hidden_dim,self.head_dim,attention_dropout,attention_mask)
+            for _ in range(self.head_num)
+        ])
+        self.proj = nn.Linear(self.hidden_dim, self.hidden_dim)
+        self.dropout = nn.Dropout(attention_dropout)
+
+    def forward(self, X): #TODO
+        pass
+
+class SingalHeadAttention(nn.Module):
+    def __init__(self, hidden_dim, head_size, dropout, attention_mask=None):
+        super().__init__()
+        self.attention_mask = attention_mask
+        self.q_proj = nn.Linear(hidden_dim,head_size)
+        self.k_proj = nn.Linear(hidden_dim,head_size)
+        self.v_proj = nn.Linear(hidden_dim,head_size)
+        self.dropout = nn.Dropout(dropout)
+        self.hade_size = head_size
+    def forward(self, X):
+        Q = self.q_proj(X)
+        K = self.k_proj(X)
+        V = self.v_proj(X)
+
+        attention_weight = torch.matmul(Q,K.transpose(-1.-2))
+        if self.attention_mask  is not None:
+            attention_weight = attention_weight.masked_fill(self.attention_mask==0,float('-ínf'))/math.sqrt(self.hade_size)
+        else:
+            attention_weight = attention_weight/math.sqrt(self.hade_size)
+        attention_weight = F.softmax(attention_weight, dim=1)
+        attention_weight = self.dropout(attention_weight)
+        output = torch.matmul(attention_weight, V)
+        return output
+
+
 if __name__ == '__main__':
     attention_mask = (
         torch.tensor(
@@ -61,7 +105,7 @@ if __name__ == '__main__':
     )
 
     x = torch.rand(3, 2, 128)
-    net = MultiHeadSelfattention(128, 8)
+    net = MultiHeadSelfattentionV1(128, 8)
     # print(net(x, attention_mask).shape)
     # print(net)
     summary(net, input_size=(2, 128), batch_size=5)
